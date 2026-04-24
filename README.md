@@ -1,78 +1,72 @@
-ERPNext Chatbot
-I built this as a small project to learn how APIs work. It's a chatbot that connects to ERPNext and lets you ask questions about Sales Orders, Invoices, and Employees just by typing.
+# ERPNext ChatBot
+ 
+A simple chatbot I built using Flask that talks to ERPNext through its REST API. Instead of opening ERPNext and clicking through menus, you just type a question and get the answer directly in the chat.
+ 
+## What I used
+ 
+- Python + Flask for the backend
+- ERPNext running locally through Docker
+- ERPNext REST API to fetch order data
+- Simple HTML and CSS for the chat interface
+ 
+## How it works
+ 
+You type something like "what is the status of SAL-ORD-2026-00007" and the chatbot picks out the Order ID from your message using regex, calls the ERPNext API, and returns the answer. That's basically it.
+ 
+User types → Flask finds Order ID → Calls ERPNext API → Shows the answer
+ 
+API used:
 
-What it does:
-You type something like "what is the status of SAL-ORD-2026-00007" and it fetches that data from ERPNext and shows the answer. 
-
-Supports:
-*Sales Orders
-*Sales Invoices
-*Employees
-
-Tech I used
-*Python
-*Flask
-*ERPNext (running locally with Docker)
-*REST API
-
-
-How to run it
-You need two terminals for this.
-
-*Terminal 1 — start ERPNext
-cd C:\Users\jebap\OneDrive\Desktop\OneDrive\Documents\frappe_docker\frappe_docker
-docker compose -f pwd.yml up
-Then go to http://localhost:8080
-
-*Terminal 2 — run the chatbot
-cd C:\Users\jebap\OneDrive\Desktop\OneDrive\Documents\frappe_docker\project
-python app.py
-Then open http://127.0.0.1:5000
-
-Important: always start ERPNext first. If we run the chatbot before ERPNext is ready, we'll get a connection error.
-
-
-Example queries you can try:
-
+GET http://localhost:8080/api/resource/Sales Order/{order_id}
+ 
+Authentication is handled using an API Key and API Secret from ERPNext settings.
+ 
+## What you can ask
+ 
 What is status of SAL-ORD-2026-00007
 Show amount of SAL-ORD-2026-00007
 Who is customer of SAL-ORD-2026-00007
 What is delivery date of SAL-ORD-2026-00007
 
-What is status of ACC-SINV-2026-00001
-Show amount of ACC-SINV-2026-00001
-
-Who is HR-EMP-00001
-Is HR-EMP-00001 active
-
-How it works:
-
-You type a query
-The app finds the ID in your message using regex
-It figures out which ERPNext module to call (Sales Order, Invoice, Employee)
-Sends a GET request to the ERPNext API
-Shows the result in the chat
-
-
-Problems I faced while building this:
-
-*Got 401 error at first — I wasn't sending the API key correctly in the headers
-*Connection refused error — was running chatbot before Docker finished loading ERPNext
-*Regex wasn't matching the ID — had to fix the pattern after testing a few times
-*Docker path issue — wrong folder, took me a while to figure out
-
-
-what works now:
-
-Fetch status, amount, customer, delivery date for Sales Orders
-Fetch status and amount for Invoices
-Fetch employee name and status
-Error messages for wrong input or connection issues
-
-
-Future enhancements:
-
-Chat history
-Support for more ERPNext modules
-Better looking UI
-Maybe AI integration to make it smarter.
+## How to run it
+ 
+**Step 1 — Start ERPNext**
+ 
+```bash
+cd frappe_docker
+docker compose -f pwd.yml up -d
+```
+ 
+Wait around 5 to 10 minutes for everything to load, then open `http://localhost:8080` to confirm it's running.
+ 
+**Step 2 — Run the chatbot**
+ 
+```bash
+cd project
+python app.py
+```
+ 
+Open `http://127.0.0.1:5000` in your browser.
+ 
+> Start ERPNext first. If you run the chatbot before ERPNext is ready it will throw a connection error.
+ 
+## Problems I ran into
+ 
+- Got a **401 Unauthorized** error at first — I wasn't passing the API key correctly in the request headers
+- Kept getting **connection refused** because I was starting the chatbot before ERPNext finished loading
+- Had a **Docker path issue** — had to make sure I was in the right folder before running the compose command
+- The **regex wasn't matching** at first because the order ID format wasn't what I expected — fixed it by testing patterns manually
+ 
+## What it can do right now
+ 
+- Check Sales Order status
+- Get order amount
+- Find customer name
+- Get delivery date
+- Shows a proper error message for invalid input
+ 
+## What I want to add later
+ 
+- Chat history so old messages don't disappear when you send a new one
+- Support for other modules like Employee and Purchase Invoice
+- Better UI overall

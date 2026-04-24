@@ -1,16 +1,19 @@
+
 from flask import Flask, request, render_template_string
 import requests
 import re
 
 app = Flask(__name__)
+
 API_KEY = "2d0cdea1e39320d"
 API_SECRET = "2ad8b76228da471"
 
-headers = {
+AUTH_HEADERS = {
     "Authorization": f"token {API_KEY}:{API_SECRET}"
 }
 
-html = """
+
+PAGE = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -23,12 +26,13 @@ html = """
             justify-content: center;
             align-items: center;
             height: 100vh;
+            margin: 0;
         }
 
         .chat-container {
             width: 400px;
             height: 600px;
-            background: #fff;
+            background: white;
             border-radius: 10px;
             display: flex;
             flex-direction: column;
@@ -48,6 +52,8 @@ html = """
             padding: 10px;
             overflow-y: auto;
             background: #ece5dd;
+            display: flex;
+            flex-direction: column;
         }
 
         .message {
@@ -64,7 +70,7 @@ html = """
         }
 
         .bot {
-            background: #fff;
+            background: white;
             align-self: flex-start;
         }
 
@@ -74,7 +80,7 @@ html = """
             background: #f0f0f0;
         }
 
-        input {
+        input[type=text] {
             flex: 1;
             padding: 10px;
             border-radius: 20px;
@@ -94,27 +100,69 @@ html = """
     </style>
 </head>
 <body>
-
 <div class="chat-container">
     <div class="header">ERPNext Chatbot</div>
-
     <div class="chat-box">
         {% for msg in messages %}
             <div class="message {{ msg.type }}">{{ msg.text }}</div>
         {% endfor %}
     </div>
-
     <form method="POST" class="input-box">
         <input type="text" name="query" placeholder="Type a message..." required>
         <button type="submit">Send</button>
     </form>
 </div>
-
 </body>
 </html>
 """
 
-messages = []
+def get_doc_info(query):
+    # figure out what doc type and id user is asking about
+    so_match  = re.search(r"SAL-ORD-\d{4}-\d{5}", query)
+    inv_match = re.search(r"ACC-SINV-\d{4}-\d{5}", query)
+    emp_match = re.search(r"HR-EMP-\d+", query)
+
+    if so_match:
+        return "Sales Order", so_match.group()
+    elif inv_match:
+        return "Sales Invoice", inv_match.group()
+    elif emp_match:
+        return "Employee", emp_match.group()
+    
+    return None, None
+
+
+def build_response(doc_type, data, q):
+    if doc_type == "Sales Order":
+        if "status" in q:
+            return f"Status: {data.get('status')}"
+        elif "amount" in q or "total" in q:
+            return f"Amount: {data.get('grand_total')}"
+        elif "customer" in q:
+            return f"Customer: {data.get('customer_name')}"
+        elif "delivery" in q:
+            return f"Delivery Date: {data.get('delivery_date')}"
+        else:
+            return "Ask about status, amount, customer or delivery"
+
+    elif doc_type == "Sales Invoice":
+        if "status" in q:
+            return f"Status: {data.get('status')}"
+        elif "amount" in q or "total" in q:
+            return f"Amount: {data.get('grand_total')}"
+        else:
+            return "Ask about status or amount"
+
+    elif doc_type == "Employee":
+        if "name" in q:
+            return f"Employee Name: {data.get('employee_name')}"
+        elif "status" in q or "active" in q:
+            return f"Status: {data.get('status')}"
+        elif "joining" in q:
+            return f"Joining Date: {data.get('date_of_joining')}"
+        else:
+            return "Ask about name, status or joining date"
+
 
 @app.route("/", methods=["GET", "POST"])
 def home():
@@ -126,76 +174,32 @@ def home():
 
         if not query:
             messages.append({"type": "bot", "text": "Please enter a query"})
-            return render_template_string(html, messages=messages)
+            return render_template_string(PAGE, messages=messages)
 
         try:
             q = query.lower()
+            doc_type, doc_id = get_doc_info(query)
 
-            so = re.search(r"SAL-ORD-\d{4}-\d{5}", query)
-            inv = re.search(r"ACC-SINV-\d{4}-\d{5}", query)
-            emp = re.search(r"HR-EMP-\d+", query)
-
-            if so:
-                doc_type = "Sales Order"
-                doc_id = so.group()
-            elif inv:
-                doc_type = "Sales Invoice"
-                doc_id = inv.group()
-            elif emp:
-                doc_type = "Employee"
-                doc_id = emp.group()
-            else:
+            if not doc_type:
                 messages.append({"type": "bot", "text": "Invalid ID format"})
-                return render_template_string(html, messages=messages)
+                return render_template_string(PAGE, messages=messages)
 
             url = f"http://localhost:8080/api/resource/{doc_type}/{doc_id}"
+            resp = requests.get(url, headers=AUTH_HEADERS)
 
-            r = requests.get(url, headers=headers)
+            if resp.status_code != 200:
+                messages.append({"type": "bot", "text": f"API Error: {resp.status_code}"})
+                return render_template_string(PAGE, messages=messages)
 
-            if r.status_code != 200:
-                messages.append({"type": "bot", "text": f"API Error: {r.status_code}"})
-                return render_template_string(html, messages=messages)
-
-            data = r.json().get("data", {})
-
-
-            if doc_type == "Sales Order":
-                if "status" in q:
-                    response = f"Status: {data.get('status')}"
-                elif "amount" in q or "total" in q:
-                    response = f"Amount: {data.get('grand_total')}"
-                elif "customer" in q:
-                    response = f"Customer: {data.get('customer_name')}"
-                elif "delivery" in q:
-                    response = f"Delivery Date: {data.get('delivery_date')}"
-                else:
-                    response = "Ask about status, amount, customer or delivery"
-
-            elif doc_type == "Sales Invoice":
-                if "status" in q:
-                    response = f"Status: {data.get('status')}"
-                elif "amount" in q or "total" in q:
-                    response = f"Amount: {data.get('grand_total')}"
-                else:
-                    response = "Ask about status or amount"
-
-            elif doc_type == "Employee":
-                if "name" in q:
-                    response = f"Employee Name: {data.get('employee_name')}"
-                elif "status" in q or "active" in q:
-                    response = f"Status: {data.get('status')}"
-                elif "joining" in q:
-                    response = f"Joining Date: {data.get('date_of_joining')}"
-                else:
-                    response = "Ask about name, status or joining date"
-
-            messages.append({"type": "bot", "text": response})
+            data = resp.json().get("data", {})
+            reply = build_response(doc_type, data, q)
+            messages.append({"type": "bot", "text": reply})
 
         except Exception as e:
             messages.append({"type": "bot", "text": f"Error: {str(e)}"})
 
-    return render_template_string(html, messages=messages)
+    return render_template_string(PAGE, messages=messages)
 
 
 if __name__ == "__main__":
-    app.run(port=5000)
+    app.run(port=5000, debug=True)

@@ -9,26 +9,26 @@ load_dotenv()
 
 app = Flask(__name__)
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-ERP_API_KEY = os.environ.get("ERP_API_KEY")
-ERP_API_SECRET = os.environ.get("ERP_API_SECRET")
-ERP_BASE_URL = os.environ.get("ERP_BASE_URL", "http://localhost:8080")
+GROQ_KEY = os.environ.get("GROQ_API_KEY")
+ERP_KEY = os.environ.get("ERP_API_KEY")
+ERP_SECRET = os.environ.get("ERP_API_SECRET")
+ERP_URL = os.environ.get("ERP_BASE_URL", "http://localhost:8080")
 
-groq_client = Groq(api_key=GROQ_API_KEY)
+client = Groq(api_key=GROQ_KEY)
 
-erp_headers = {
-    "Authorization": f"token {ERP_API_KEY}:{ERP_API_SECRET}"
+auth = {
+    "Authorization": f"token {ERP_KEY}:{ERP_SECRET}"
 }
 
-chat_history = []
+history = []
 
-DOC_PATTERNS = {
+patterns = {
     "Sales Order": r"SAL-ORD-\d{4}-\d{5}",
     "Employee": r"HR-EMP-\d{5}",
     "Sales Invoice": r"ACC-SINV-\d{4}-\d{5}",
 }
 
-HTML_TEMPLATE = """
+html = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -149,53 +149,63 @@ HTML_TEMPLATE = """
 </body>
 </html>
 """
-def detect_erp_document(query):
-    for doc_type, pattern in DOC_PATTERNS.items():
+def find_doc(query):
+    for doc_type, pattern in patterns.items():
         match = re.search(pattern, query, re.IGNORECASE)
         if match:
             return doc_type, match.group()
     return None, None
 
-def fetch_erp_data(doc_type, doc_id):
-    url = f"{ERP_BASE_URL}/api/resource/{doc_type}/{doc_id}"
-    response = requests.get(url, headers=erp_headers)
-    if response.status_code != 200:
+def get_erp_data(doc_type, doc_id):
+    url = f"{ERP_URL}/api/resource/{doc_type}/{doc_id}"
+    res = requests.get(url, headers=auth)
+    if res.status_code != 200:
         return None
-    return response.json().get("data", {})
-
-def ask_groq(prompt):
-    result = groq_client.chat.completions.create(
+    return res.json().get("data", {})
+    
+def ask_ai(prompt):
+    res = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[{"role": "user", "content": prompt}]
     )
-    return result.choices[0].message.content
+    return res.choices[0].message.content
+    
+def get_reply(query):
+    doc_type, doc_id = find_doc(query)
 
-def handle_query(query):
-    doc_type, doc_id = detect_erp_document(query)
     if not doc_id:
-        return ask_groq(query)
-    erp_data = fetch_erp_data(doc_type, doc_id)
-    if erp_data is None:
+        return ask_ai(query)
+
+    data = get_erp_data(doc_type, doc_id)
+    if data is None:
         return "Could not fetch data from ERPNext. Please check the document ID."
-    return ask_groq(prompt)
+
+    prompt = f"""User question: {query}
+
+Here is the ERP data for {doc_type} ({doc_id}):
+{data}
+
+Answer the user's question clearly based on the data above."""
+
+    return ask_ai(prompt)
+
 
 @app.route("/", methods=["GET", "POST"])
 def home():
-    global chat_history
+    global history
 
     if request.method == "POST":
         query = request.form.get("query", "").strip()
-        chat_history.append({"type": "user", "text": query})
+        history.append({"type": "user", "text": query})
 
         try:
-            reply = handle_query(query)
+            reply = get_reply(query)
         except Exception as e:
             reply = f"Something went wrong: {str(e)}"
 
-        chat_history.append({"type": "bot", "text": reply})
+        history.append({"type": "bot", "text": reply})
 
-    return render_template_string(HTML_TEMPLATE, messages=chat_history)
-
-
+    return render_template_string(html, messages=history)
+    
 if __name__ == "__main__":
     app.run(port=5000, debug=True)

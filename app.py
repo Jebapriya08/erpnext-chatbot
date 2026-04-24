@@ -3,8 +3,6 @@ import requests
 import re
 
 app = Flask(__name__)
-
-# 🔐 Replace with your actual API KEY and SECRET
 API_KEY = "2d0cdea1e39320d"
 API_SECRET = "2ad8b76228da471"
 
@@ -160,7 +158,6 @@ def home():
 
             data = r.json().get("data", {})
 
-            # 🔥 LOGIC
 
             if doc_type == "Sales Order":
                 if "status" in q:

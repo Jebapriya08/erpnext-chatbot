@@ -54,7 +54,7 @@ Sends a GET request to the ERPNext API
 Shows the result in the chat
 
 
-Problems I faced while building this
+Problems I faced while building this:
 
 *Got 401 error at first — I wasn't sending the API key correctly in the headers
 *Connection refused error — was running chatbot before Docker finished loading ERPNext
@@ -62,7 +62,7 @@ Problems I faced while building this
 *Docker path issue — wrong folder, took me a while to figure out
 
 
-What works right now
+what works now:
 
 Fetch status, amount, customer, delivery date for Sales Orders
 Fetch status and amount for Invoices
@@ -70,7 +70,7 @@ Fetch employee name and status
 Error messages for wrong input or connection issues
 
 
-What I want to add later
+Future enhancements:
 
 Chat history
 Support for more ERPNext modules

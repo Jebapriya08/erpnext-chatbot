@@ -1,26 +1,41 @@
-
-from flask import Flask, request, render_template_string
-import requests
+import os
 import re
+import requests
+from flask import Flask, request, render_template_string
+from groq import Groq
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 
-API_KEY = "2d0cdea1e39320d"
-API_SECRET = "2ad8b76228da471"
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+ERP_API_KEY = os.environ.get("ERP_API_KEY")
+ERP_API_SECRET = os.environ.get("ERP_API_SECRET")
+ERP_BASE_URL = os.environ.get("ERP_BASE_URL", "http://localhost:8080")
 
-AUTH_HEADERS = {
-    "Authorization": f"token {API_KEY}:{API_SECRET}"
+groq_client = Groq(api_key=GROQ_API_KEY)
+
+erp_headers = {
+    "Authorization": f"token {ERP_API_KEY}:{ERP_API_SECRET}"
 }
 
+chat_history = []
 
-PAGE = """
+DOC_PATTERNS = {
+    "Sales Order": r"SAL-ORD-\d{4}-\d{5}",
+    "Employee": r"HR-EMP-\d{5}",
+    "Sales Invoice": r"ACC-SINV-\d{4}-\d{5}",
+}
+
+HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ERPNext Chatbot</title>
+    <title>AI ERPNext Chatbot</title>
     <style>
         body {
-            font-family: Arial;
+            font-family: Arial, sans-serif;
             background: #e5ddd5;
             display: flex;
             justify-content: center;
@@ -32,173 +47,154 @@ PAGE = """
         .chat-container {
             width: 400px;
             height: 600px;
-            background: white;
-            border-radius: 10px;
+            background: #fff;
             display: flex;
             flex-direction: column;
+            border-radius: 10px;
             overflow: hidden;
-            box-shadow: 0 0 10px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
         }
 
         .header {
             background: #075E54;
             color: white;
-            padding: 15px;
+            padding: 12px 16px;
             font-size: 18px;
+            font-weight: bold;
         }
 
         .chat-box {
             flex: 1;
             padding: 10px;
             overflow-y: auto;
-            background: #ece5dd;
             display: flex;
             flex-direction: column;
+            gap: 6px;
         }
 
         .message {
-            margin: 5px 0;
-            padding: 10px;
+            padding: 10px 14px;
             border-radius: 10px;
-            max-width: 70%;
+            max-width: 75%;
             word-wrap: break-word;
+            font-size: 14px;
+            line-height: 1.4;
         }
 
         .user {
             background: #dcf8c6;
             align-self: flex-end;
+            border-bottom-right-radius: 2px;
         }
 
         .bot {
-            background: white;
+            background: #f1f0f0;
             align-self: flex-start;
+            border-bottom-left-radius: 2px;
         }
 
         .input-box {
             display: flex;
             padding: 10px;
-            background: #f0f0f0;
+            border-top: 1px solid #ccc;
+            gap: 8px;
         }
 
-        input[type=text] {
+        input {
             flex: 1;
-            padding: 10px;
+            padding: 10px 14px;
             border-radius: 20px;
             border: 1px solid #ccc;
             outline: none;
+            font-size: 14px;
         }
 
         button {
-            margin-left: 10px;
-            padding: 10px 15px;
+            padding: 10px 16px;
             border: none;
             border-radius: 20px;
             background: #128C7E;
             color: white;
             cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:hover {
+            background: #0e7a6e;
         }
     </style>
 </head>
 <body>
+
 <div class="chat-container">
-    <div class="header">ERPNext Chatbot</div>
-    <div class="chat-box">
+    <div class="header">AI ERPNext Chatbot</div>
+
+    <div class="chat-box" id="chatBox">
         {% for msg in messages %}
-            <div class="message {{ msg.type }}">{{ msg.text }}</div>
+        <div class="message {{ msg.type }}">{{ msg.text }}</div>
         {% endfor %}
     </div>
+
     <form method="POST" class="input-box">
-        <input type="text" name="query" placeholder="Type a message..." required>
+        <input name="query" placeholder="Type your message..." autocomplete="off" required>
         <button type="submit">Send</button>
     </form>
 </div>
+
+<script>
+    const chatBox = document.getElementById("chatBox");
+    chatBox.scrollTop = chatBox.scrollHeight;
+</script>
+
 </body>
 </html>
 """
-
-def get_doc_info(query):
-    # figure out what doc type and id user is asking about
-    so_match  = re.search(r"SAL-ORD-\d{4}-\d{5}", query)
-    inv_match = re.search(r"ACC-SINV-\d{4}-\d{5}", query)
-    emp_match = re.search(r"HR-EMP-\d+", query)
-
-    if so_match:
-        return "Sales Order", so_match.group()
-    elif inv_match:
-        return "Sales Invoice", inv_match.group()
-    elif emp_match:
-        return "Employee", emp_match.group()
-    
+def detect_erp_document(query):
+    for doc_type, pattern in DOC_PATTERNS.items():
+        match = re.search(pattern, query, re.IGNORECASE)
+        if match:
+            return doc_type, match.group()
     return None, None
 
+def fetch_erp_data(doc_type, doc_id):
+    url = f"{ERP_BASE_URL}/api/resource/{doc_type}/{doc_id}"
+    response = requests.get(url, headers=erp_headers)
+    if response.status_code != 200:
+        return None
+    return response.json().get("data", {})
 
-def build_response(doc_type, data, q):
-    if doc_type == "Sales Order":
-        if "status" in q:
-            return f"Status: {data.get('status')}"
-        elif "amount" in q or "total" in q:
-            return f"Amount: {data.get('grand_total')}"
-        elif "customer" in q:
-            return f"Customer: {data.get('customer_name')}"
-        elif "delivery" in q:
-            return f"Delivery Date: {data.get('delivery_date')}"
-        else:
-            return "Ask about status, amount, customer or delivery"
+def ask_groq(prompt):
+    result = groq_client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return result.choices[0].message.content
 
-    elif doc_type == "Sales Invoice":
-        if "status" in q:
-            return f"Status: {data.get('status')}"
-        elif "amount" in q or "total" in q:
-            return f"Amount: {data.get('grand_total')}"
-        else:
-            return "Ask about status or amount"
-
-    elif doc_type == "Employee":
-        if "name" in q:
-            return f"Employee Name: {data.get('employee_name')}"
-        elif "status" in q or "active" in q:
-            return f"Status: {data.get('status')}"
-        elif "joining" in q:
-            return f"Joining Date: {data.get('date_of_joining')}"
-        else:
-            return "Ask about name, status or joining date"
-
+def handle_query(query):
+    doc_type, doc_id = detect_erp_document(query)
+    if not doc_id:
+        return ask_groq(query)
+    erp_data = fetch_erp_data(doc_type, doc_id)
+    if erp_data is None:
+        return "Could not fetch data from ERPNext. Please check the document ID."
+    return ask_groq(prompt)
 
 @app.route("/", methods=["GET", "POST"])
 def home():
-    global messages
+    global chat_history
 
     if request.method == "POST":
         query = request.form.get("query", "").strip()
-        messages.append({"type": "user", "text": query})
-
-        if not query:
-            messages.append({"type": "bot", "text": "Please enter a query"})
-            return render_template_string(PAGE, messages=messages)
+        chat_history.append({"type": "user", "text": query})
 
         try:
-            q = query.lower()
-            doc_type, doc_id = get_doc_info(query)
-
-            if not doc_type:
-                messages.append({"type": "bot", "text": "Invalid ID format"})
-                return render_template_string(PAGE, messages=messages)
-
-            url = f"http://localhost:8080/api/resource/{doc_type}/{doc_id}"
-            resp = requests.get(url, headers=AUTH_HEADERS)
-
-            if resp.status_code != 200:
-                messages.append({"type": "bot", "text": f"API Error: {resp.status_code}"})
-                return render_template_string(PAGE, messages=messages)
-
-            data = resp.json().get("data", {})
-            reply = build_response(doc_type, data, q)
-            messages.append({"type": "bot", "text": reply})
-
+            reply = handle_query(query)
         except Exception as e:
-            messages.append({"type": "bot", "text": f"Error: {str(e)}"})
+            reply = f"Something went wrong: {str(e)}"
 
-    return render_template_string(PAGE, messages=messages)
+        chat_history.append({"type": "bot", "text": reply})
+
+    return render_template_string(HTML_TEMPLATE, messages=chat_history)
 
 
 if __name__ == "__main__":

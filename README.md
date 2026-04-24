@@ -1,50 +1,78 @@
-# ERPNext Chatbot
-A chatbot I made using Flask. It connects to ERPNext and gives you Sales Order details when you ask.
+ERPNext Chatbot
+I built this as a small project to learn how APIs work. It's a chatbot that connects to ERPNext and lets you ask questions about Sales Orders, Invoices, and Employees just by typing.
 
-## What I used
-- Python
-- Flask
-- ERPNext (runs on Docker)
-- REST API
+What it does:
+You type something like "what is the status of SAL-ORD-2026-00007" and it fetches that data from ERPNext and shows the answer. 
 
-## How to run
-**First — start ERPNext**
+Supports:
+*Sales Orders
+*Sales Invoices
+*Employees
+
+Tech I used
+*Python
+*Flask
+*ERPNext (running locally with Docker)
+*REST API
+
+
+How to run it
+You need two terminals for this.
+
+*Terminal 1 — start ERPNext
 cd C:\Users\jebap\OneDrive\Desktop\OneDrive\Documents\frappe_docker\frappe_docker
 docker compose -f pwd.yml up
-Open `http://localhost:8080` and wait for ERPNext to load.
+Then go to http://localhost:8080
 
-**Then — start the chatbot**
-Open a new terminal window:
+*Terminal 2 — run the chatbot
 cd C:\Users\jebap\OneDrive\Desktop\OneDrive\Documents\frappe_docker\project
 python app.py
-Open `http://127.0.0.1:5000` in your browser.
-Note: Start ERPNext first. If ERPNext is not running, the chatbot will give a connection error.
+Then open http://127.0.0.1:5000
 
-## How to use it
-Type this in the chatbot:
+Important: always start ERPNext first. If we run the chatbot before ERPNext is ready, we'll get a connection error.
+
+
+Example queries you can try:
 
 What is status of SAL-ORD-2026-00007
 Show amount of SAL-ORD-2026-00007
 Who is customer of SAL-ORD-2026-00007
 What is delivery date of SAL-ORD-2026-00007
-It will pull the data from ERPNext and show the answer.
 
-## API
-GET http://localhost:8080/api/resource/Sales Order/{order_id}
-Login is done using API Key and API Secret from ERPNext.
+What is status of ACC-SINV-2026-00001
+Show amount of ACC-SINV-2026-00001
 
-## Problems I faced
-- Got `401 Unauthorized` — fixed by adding API key properly in the request header
-- Chatbot gave connection error — I was running the chatbot before ERPNext was ready
-- Order ID was not getting detected — fixed by writing a proper regex pattern
-- Docker path was wrong at first — had to navigate to the correct folder
+Who is HR-EMP-00001
+Is HR-EMP-00001 active
 
-## What it can do
-- Get Sales Order status
-- Get amount, customer name, delivery date
-- Shows error message for wrong input
+How it works:
 
-## What I want to add later
-- Keep chat history so old messages don't disappear
-- Add support for other ERPNext modules like Employee or Invoice
-- Make the UI look better
+You type a query
+The app finds the ID in your message using regex
+It figures out which ERPNext module to call (Sales Order, Invoice, Employee)
+Sends a GET request to the ERPNext API
+Shows the result in the chat
+
+
+Problems I faced while building this
+
+*Got 401 error at first — I wasn't sending the API key correctly in the headers
+*Connection refused error — was running chatbot before Docker finished loading ERPNext
+*Regex wasn't matching the ID — had to fix the pattern after testing a few times
+*Docker path issue — wrong folder, took me a while to figure out
+
+
+What works right now
+
+Fetch status, amount, customer, delivery date for Sales Orders
+Fetch status and amount for Invoices
+Fetch employee name and status
+Error messages for wrong input or connection issues
+
+
+What I want to add later
+
+Chat history
+Support for more ERPNext modules
+Better looking UI
+Maybe AI integration to make it smarter.

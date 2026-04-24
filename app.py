@@ -4,10 +4,13 @@ import re
 
 app = Flask(__name__)
 
+# 🔐 Replace with your actual API KEY and SECRET
 API_KEY = "2d0cdea1e39320d"
-API_SECRET = "3c42c12801b0b59"
-BASE_URL = "http://localhost:8080/api/resource"
-AUTH = f"token {API_KEY}:{API_SECRET}"
+API_SECRET = "2ad8b76228da471"
+
+headers = {
+    "Authorization": f"token {API_KEY}:{API_SECRET}"
+}
 
 html = """
 <!DOCTYPE html>
@@ -16,47 +19,44 @@ html = """
     <title>ERPNext Chatbot</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
-            background: #ece5dd;
-            margin: 0;
-            padding: 0;
+            font-family: Arial;
+            background: #e5ddd5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
         }
 
         .chat-container {
-            width: 420px;
-            margin: 40px auto;
-            background: white;
+            width: 400px;
+            height: 600px;
+            background: #fff;
             border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.15);
             display: flex;
             flex-direction: column;
-            height: 580px;
+            overflow: hidden;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
         }
 
         .header {
-            background: #075e54;
+            background: #075E54;
             color: white;
-            padding: 14px 18px;
-            font-size: 17px;
-            font-weight: bold;
+            padding: 15px;
+            font-size: 18px;
         }
 
-        .chat-area {
+        .chat-box {
             flex: 1;
-            padding: 14px;
+            padding: 10px;
             overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
+            background: #ece5dd;
         }
 
         .message {
-            max-width: 78%;
-            padding: 10px 14px;
-            border-radius: 8px;
-            font-size: 14px;
-            line-height: 1.5;
+            margin: 5px 0;
+            padding: 10px;
+            border-radius: 10px;
+            max-width: 70%;
             word-wrap: break-word;
         }
 
@@ -66,42 +66,32 @@ html = """
         }
 
         .bot {
-            background: #f1f0f0;
+            background: #fff;
             align-self: flex-start;
         }
 
         .input-box {
             display: flex;
-            border-top: 1px solid #ddd;
             padding: 10px;
-            gap: 8px;
+            background: #f0f0f0;
         }
 
-        input[type="text"] {
+        input {
             flex: 1;
-            padding: 10px 14px;
-            border: 1px solid #ccc;
+            padding: 10px;
             border-radius: 20px;
-            font-size: 14px;
+            border: 1px solid #ccc;
             outline: none;
         }
 
-        input[type="text"]:focus {
-            border-color: #128c7e;
-        }
-
         button {
-            padding: 10px 18px;
-            background: #128c7e;
-            color: white;
+            margin-left: 10px;
+            padding: 10px 15px;
             border: none;
             border-radius: 20px;
-            font-size: 14px;
+            background: #128C7E;
+            color: white;
             cursor: pointer;
-        }
-
-        button:hover {
-            background: #0a6e63;
         }
     </style>
 </head>
@@ -110,17 +100,14 @@ html = """
 <div class="chat-container">
     <div class="header">ERPNext Chatbot</div>
 
-    <div class="chat-area">
-        {% if query %}
-            <div class="message user">{{ query }}</div>
-        {% endif %}
-        {% if response %}
-            <div class="message bot">{{ response }}</div>
-        {% endif %}
+    <div class="chat-box">
+        {% for msg in messages %}
+            <div class="message {{ msg.type }}">{{ msg.text }}</div>
+        {% endfor %}
     </div>
 
     <form method="POST" class="input-box">
-        <input type="text" name="query" placeholder="Type a message..." autocomplete="off" required>
+        <input type="text" name="query" placeholder="Type a message..." required>
         <button type="submit">Send</button>
     </form>
 </div>
@@ -129,98 +116,89 @@ html = """
 </html>
 """
 
-def get_url_for_id(doc_id):
-    if doc_id.startswith("SAL-ORD"):
-        return f"{BASE_URL}/Sales Order/{doc_id}"
-    elif doc_id.startswith("ACC-SINV"):
-        return f"{BASE_URL}/Sales Invoice/{doc_id}"
-    elif doc_id.startswith("HR-EMP"):
-        return f"{BASE_URL}/Employee/{doc_id}"
-    return None
-
-def get_answer(doc_id, doc, query):
-    q = query.lower()
-
-    if doc_id.startswith("SAL-ORD"):
-        if "status" in q:
-            return "Status: " + str(doc.get("status", "Not found"))
-        elif "amount" in q:
-            return "Amount: ₹" + str(doc.get("grand_total", "Not found"))
-        elif "customer" in q:
-            return "Customer: " + str(doc.get("customer_name", "Not found"))
-        elif "delivery" in q:
-            return "Delivery Date: " + str(doc.get("delivery_date", "Not found"))
-        else:
-            # default — just show the status if user doesn't ask anything specific
-            return "Status: " + str(doc.get("status", "Not found"))
-
-    elif doc_id.startswith("ACC-SINV"):
-        if "amount" in q:
-            return "Invoice Amount: ₹" + str(doc.get("grand_total", "Not found"))
-        else:
-            return "Invoice Status: " + str(doc.get("status", "Not found"))
-
-    elif doc_id.startswith("HR-EMP"):
-        if "status" in q or "active" in q:
-            return "Employee Status: " + str(doc.get("status", "Not found"))
-        else:
-            return "Employee Name: " + str(doc.get("employee_name", "Not found"))
-
-    return "Couldn't understand what you're looking for."
-
+messages = []
 
 @app.route("/", methods=["GET", "POST"])
 def home():
-    query = ""
-    response = ""
+    global messages
 
     if request.method == "POST":
         query = request.form.get("query", "").strip()
+        messages.append({"type": "user", "text": query})
 
         if not query:
-            return render_template_string(html, query=query, response="Please type something.")
-
-        # extract the document ID from the user's message
-        match = re.search(r"(SAL-ORD-\d{4}-\d{5}|ACC-SINV-\d{4}-\d{5}|HR-EMP-\d+)", query)
-
-        if not match:
-            return render_template_string(
-                html, query=query,
-                response="Couldn't find a valid ID. Try something like SAL-ORD-2026-00007"
-            )
-
-        doc_id = match.group()
-        url = get_url_for_id(doc_id)
-
-        if not url:
-            return render_template_string(html, query=query, response="This ID type is not supported yet.")
+            messages.append({"type": "bot", "text": "Please enter a query"})
+            return render_template_string(html, messages=messages)
 
         try:
-            r = requests.get(url, headers={"Authorization": AUTH}, timeout=5)
+            q = query.lower()
 
-            if r.status_code == 401:
-                return render_template_string(html, query=query, response="Authentication failed. Check your API key.")
-            elif r.status_code == 404:
-                return render_template_string(html, query=query, response=f"No record found for {doc_id}.")
-            elif r.status_code != 200:
-                return render_template_string(html, query=query, response=f"API returned an error: {r.status_code}")
+            so = re.search(r"SAL-ORD-\d{4}-\d{5}", query)
+            inv = re.search(r"ACC-SINV-\d{4}-\d{5}", query)
+            emp = re.search(r"HR-EMP-\d+", query)
 
-            data = r.json()
+            if so:
+                doc_type = "Sales Order"
+                doc_id = so.group()
+            elif inv:
+                doc_type = "Sales Invoice"
+                doc_id = inv.group()
+            elif emp:
+                doc_type = "Employee"
+                doc_id = emp.group()
+            else:
+                messages.append({"type": "bot", "text": "Invalid ID format"})
+                return render_template_string(html, messages=messages)
 
-            if "data" not in data:
-                return render_template_string(html, query=query, response="Got a response but no data inside it.")
+            url = f"http://localhost:8080/api/resource/{doc_type}/{doc_id}"
 
-            response = get_answer(doc_id, data["data"], query)
+            r = requests.get(url, headers=headers)
 
-        except requests.exceptions.ConnectionError:
-            response = "Can't connect to ERPNext. Make sure Docker is running."
-        except requests.exceptions.Timeout:
-            response = "ERPNext took too long to respond. Try again."
+            if r.status_code != 200:
+                messages.append({"type": "bot", "text": f"API Error: {r.status_code}"})
+                return render_template_string(html, messages=messages)
+
+            data = r.json().get("data", {})
+
+            # 🔥 LOGIC
+
+            if doc_type == "Sales Order":
+                if "status" in q:
+                    response = f"Status: {data.get('status')}"
+                elif "amount" in q or "total" in q:
+                    response = f"Amount: {data.get('grand_total')}"
+                elif "customer" in q:
+                    response = f"Customer: {data.get('customer_name')}"
+                elif "delivery" in q:
+                    response = f"Delivery Date: {data.get('delivery_date')}"
+                else:
+                    response = "Ask about status, amount, customer or delivery"
+
+            elif doc_type == "Sales Invoice":
+                if "status" in q:
+                    response = f"Status: {data.get('status')}"
+                elif "amount" in q or "total" in q:
+                    response = f"Amount: {data.get('grand_total')}"
+                else:
+                    response = "Ask about status or amount"
+
+            elif doc_type == "Employee":
+                if "name" in q:
+                    response = f"Employee Name: {data.get('employee_name')}"
+                elif "status" in q or "active" in q:
+                    response = f"Status: {data.get('status')}"
+                elif "joining" in q:
+                    response = f"Joining Date: {data.get('date_of_joining')}"
+                else:
+                    response = "Ask about name, status or joining date"
+
+            messages.append({"type": "bot", "text": response})
+
         except Exception as e:
-            response = "Something went wrong: " + str(e)
+            messages.append({"type": "bot", "text": f"Error: {str(e)}"})
 
-    return render_template_string(html, query=query, response=response)
+    return render_template_string(html, messages=messages)
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(port=5000)
